@@ -2,17 +2,8 @@
 
 Структура
 
-- app/
-   main.py           # FastAPI приложение
-   requirements.txt
-   Dockerfile
-   templates/
-      index.html    # Страница для пользователей
-      admin.html    # Админка
-- nginx/
-   nginx.conf
-   default.conf
-   certs/            # сюда кладём cert.pem + key.pem
+- app/ (main.py / requirements.txt / Dockerfile templates/ (index.html  # Страница для пользователей / admin.html  # Админка)
+- nginx/ (nginx.conf / default.conf certs/   - # сюда кладём cert.pem + key.pem)
 - docker-compose.yml
 - generate_cert.sh
 - .env.example
@@ -55,4 +46,6 @@ curl -k https://localhost/api/admin/codes -H "x-admin-key: ВАШ_КЛЮЧ"
 
 Удалить (по id)
 curl -k -X DELETE https://localhost/api/admin/codes/1 -H "x-admin-key: ВАШ_КЛЮЧ"
+
+Если были изменения: docker compose up -d --build
 
