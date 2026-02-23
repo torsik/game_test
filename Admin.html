@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Админка — коды</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #fff;
+      color: #000;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 40px 24px;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    h1 { font-size: 1.3rem; font-weight: 600; margin-bottom: 4px; }
+    p.sub { font-size: 0.85rem; color: #666; margin-bottom: 30px; }
+
+    /* Auth block */
+    #authBlock { margin-bottom: 28px; }
+    #authBlock label { font-size: 0.82rem; font-weight: 500; display: block; margin-bottom: 6px; }
+    #authBlock input {
+      border: 1.5px solid #000; border-radius: 4px;
+      padding: 9px 12px; font-size: 0.9rem; width: 280px; outline: none;
+    }
+    #authBlock button {
+      margin-left: 8px; padding: 9px 18px;
+      background: #000; color: #fff; border: none; border-radius: 4px;
+      font-size: 0.88rem; cursor: pointer;
+    }
+    #authBlock button:hover { background: #222; }
+
+    /* Add form */
+    #addForm { display: none; margin-bottom: 32px; }
+    #addForm h2 { font-size: 1rem; font-weight: 600; margin-bottom: 14px; }
+
+    .row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label { font-size: 0.8rem; font-weight: 500; }
+    .field input, .field textarea {
+      border: 1.5px solid #000; border-radius: 4px;
+      padding: 9px 12px; font-size: 0.9rem; outline: none;
+      font-family: inherit;
+    }
+    .field input { width: 180px; }
+    .field textarea { width: 300px; height: 60px; resize: vertical; }
+
+    .btn-add {
+      padding: 9px 20px; background: #000; color: #fff;
+      border: none; border-radius: 4px; font-size: 0.88rem; cursor: pointer;
+      height: fit-content;
+    }
+    .btn-add:hover { background: #222; }
+
+    /* Table */
+    #tableWrap { display: none; }
+    #tableWrap h2 { font-size: 1rem; font-weight: 600; margin-bottom: 12px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th {
+      text-align: left; padding: 8px 10px;
+      border-bottom: 2px solid #000;
+      font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.07em;
+    }
+    td { padding: 10px 10px; border-bottom: 1px solid #eee; vertical-align: top; }
+    tr:hover td { background: #fafafa; }
+
+    .code-cell { font-family: monospace; font-weight: 600; white-space: nowrap; }
+    .msg-cell { color: #333; max-width: 280px; word-break: break-word; }
+    .date-cell { color: #999; font-size: 0.8rem; white-space: nowrap; }
+
+    .btn-del {
+      padding: 4px 10px; background: #fff; color: #000;
+      border: 1.5px solid #000; border-radius: 4px; font-size: 0.8rem;
+      cursor: pointer; white-space: nowrap;
+    }
+    .btn-del:hover { background: #000; color: #fff; }
+
+    .notice {
+      padding: 10px 14px; border-radius: 4px; font-size: 0.87rem;
+      margin-top: 14px; display: none;
+    }
+    .notice.ok  { border: 1px solid #000; background: #f9f9f9; display: block; }
+    .notice.err { border: 1px solid #ccc; color: #666; display: block; }
+
+    #emptyMsg { color: #999; font-size: 0.88rem; margin-top: 12px; display: none; }
+  </style>
+</head>
+<body>
+  <h1>Управление кодами</h1>
+  <p class="sub">Добавляйте и удаляйте коды. Требуется admin key.</p>
+
+  <!-- Auth -->
+  <div id="authBlock">
+    <label for="keyInput">Admin Key</label>
+    <input type="password" id="keyInput" placeholder="Введите admin key"/>
+    <button onclick="loadCodes()">Войти</button>
+    <div class="notice" id="authNotice"></div>
+  </div>
+
+  <!-- Add form -->
+  <div id="addForm">
+    <h2>Добавить код</h2>
+    <div class="row">
+      <div class="field">
+        <label>Код</label>
+        <input type="text" id="newCode" placeholder="VIP-2025" spellcheck="false"/>
+      </div>
+      <div class="field">
+        <label>Сообщение</label>
+        <textarea id="newMsg" placeholder="Текст который увидит пользователь..."></textarea>
+      </div>
+      <button class="btn-add" onclick="addCode()">Добавить</button>
+    </div>
+    <div class="notice" id="addNotice"></div>
+  </div>
+
+  <!-- Table -->
+  <div id="tableWrap">
+    <h2>Все коды</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Код</th>
+          <th>Сообщение</th>
+          <th>Добавлен</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <p id="emptyMsg">Кодов пока нет.</p>
+  </div>
+
+<script>
+  let adminKey = '';
+
+  function getKey() {
+    return document.getElementById('keyInput').value.trim();
+  }
+
+  function notice(id, text, ok) {
+    const el = document.getElementById(id);
+    el.className = 'notice ' + (ok ? 'ok' : 'err');
+    el.textContent = text;
+    setTimeout(() => { el.className = 'notice'; }, 3000);
+  }
+
+  async function loadCodes() {
+    adminKey = getKey();
+    if (!adminKey) return;
+
+    const res = await fetch('/api/admin/codes', {
+      headers: { 'x-admin-key': adminKey }
+    });
+
+    if (res.status === 401) {
+      notice('authNotice', 'Неверный admin key.', false);
+      return;
+    }
+
+    const codes = await res.json();
+    document.getElementById('authBlock').style.display = 'none';
+    document.getElementById('addForm').style.display = 'block';
+    document.getElementById('tableWrap').style.display = 'block';
+    renderTable(codes);
+  }
+
+  function renderTable(codes) {
+    const tbody = document.getElementById('tbody');
+    tbody.innerHTML = '';
+    document.getElementById('emptyMsg').style.display = codes.length === 0 ? 'block' : 'none';
+
+    codes.forEach(c => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="code-cell">${c.code}</td>
+        <td class="msg-cell">${esc(c.message)}</td>
+        <td class="date-cell">${c.created_at ? c.created_at.slice(0, 16) : '—'}</td>
+        <td><button class="btn-del" onclick="deleteCode(${c.id}, this)">Удалить</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function addCode() {
+    const code = document.getElementById('newCode').value.trim();
+    const message = document.getElementById('newMsg').value.trim();
+    if (!code || !message) { notice('addNotice', 'Заполните оба поля.', false); return; }
+
+    const res = await fetch('/api/admin/codes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': adminKey },
+      body: JSON.stringify({ code, message })
+    });
+
+    if (res.ok) {
+      document.getElementById('newCode').value = '';
+      document.getElementById('newMsg').value = '';
+      notice('addNotice', 'Код добавлен!', true);
+      await refreshTable();
+    } else {
+      const d = await res.json();
+      notice('addNotice', d.detail || 'Ошибка.', false);
+    }
+  }
+
+  async function deleteCode(id, btn) {
+    if (!confirm('Удалить этот код?')) return;
+    btn.disabled = true;
+    await fetch(`/api/admin/codes/${id}`, {
+      method: 'DELETE',
+      headers: { 'x-admin-key': adminKey }
+    });
+    await refreshTable();
+  }
+
+  async function refreshTable() {
+    const res = await fetch('/api/admin/codes', { headers: { 'x-admin-key': adminKey } });
+    renderTable(await res.json());
+  }
+
+  function esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  document.getElementById('keyInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') loadCodes();
+  });
+</script>
+</body>
+</html>
