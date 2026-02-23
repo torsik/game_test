@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+
+  app:
+    build: ./app
+    container_name: codelookup_app
+    restart: unless-stopped
+    environment:
+      - DB_PATH=/data/codes.db
+      - ADMIN_KEY=${ADMIN_KEY:-changeme}       # override in .env !
+      - RATE_LIMIT_ATTEMPTS=10
+      - RATE_LIMIT_WINDOW=60
+    volumes:
+      - db_data:/data                          # SQLite persists here
+    expose:
+      - "8000"
+    networks:
+      - internal
+
+  nginx:
+    image: nginx:alpine
+    container_name: codelookup_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro      # put cert.pem + key.pem here
+    depends_on:
+      - app
+    networks:
+      - internal
+
+volumes:
+  db_data:
+
+networks:
+  internal:
