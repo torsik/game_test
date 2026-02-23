@@ -6,13 +6,12 @@
 - nginx/ (nginx.conf / default.conf certs/   - # сюда кладём cert.pem + key.pem)
 - docker-compose.yml
 - generate_cert.sh
-- .env.example
+- .env
 
 # Запуск на домашнем сервере
 
 # 1. Подготовка
    
-bashcp .env.example .env
 nano .env   # задай свой ADMIN_KEY
 
 # 2. Сгенерируй SSL-сертификат
