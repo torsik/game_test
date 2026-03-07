@@ -1,50 +1,64 @@
-# Безопасное приложение для проверки кодов. 
+# Code Lookup
 
-Структура
+Secure code → message/file lookup app.
 
-- app/ (main.py / requirements.txt / Dockerfile templates/ (index.html  # Страница для пользователей / admin.html  # Админка)
-- nginx/ (nginx.conf / default.conf certs/   - # сюда кладём cert.pem + key.pem)
-- docker-compose.yml
-- generate_cert.sh
-- .env
+## Structure
+```
+├── app/
+│   ├── main.py
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   └── templates/
+│       ├── index.html   # User page (EN/RU switcher)
+│       └── admin.html   # Admin panel
+├── nginx/
+│   ├── nginx.conf
+│   └── default.conf
+├── docker-compose.yml
+├── .env.example
+└── README.md
+```
 
-# Запуск на домашнем сервере
+## Setup & run
 
-# 1. Подготовка
-   
-nano .env   # задай свой ADMIN_KEY
+```bash
+# 1. Set your passwords
+cp .env.example .env
+nano .env
 
-# 2. Сгенерируй SSL-сертификат
-   
-bashchmod +x generate_cert.sh
-./generate_cert.sh
+# 2. Create logs directory
+mkdir -p logs/nginx
 
-# 3. Запуск
-   
-bashdocker compose up -d --build
+# 3. Start
+docker compose up -d --build
+```
 
-Приложение доступно:
+## Environment variables
 
-https://localhost       — страница для пользователей
-https://localhost/admin — админка
+| Variable           | Default     | Description                        |
+|--------------------|-------------|------------------------------------|
+| ADMIN_KEY          | changeme    | API key for admin endpoints        |
+| ADMIN_UI_PASS      | adminpass   | Password for /admin UI             |
+| RATE_LIMIT_ATTEMPTS| 10          | Max attempts per IP per window     |
+| RATE_LIMIT_WINDOW  | 60          | Rate limit window in seconds       |
+| LOG_PATH           | /data/app.log | Path to application log          |
+| UPLOAD_DIR         | /data/uploads | Path to uploaded files           |
 
-Браузер покажет предупреждение о self-signed сертификате — нажми "Advanced → Proceed".
+## View logs
 
-Управление кодами (Админка)
-Открой https://localhost/admin, введи ADMIN_KEY — и управляй кодами прямо в браузере.
-Или через curl:
-bash# Добавить
+```bash
+# App logs (codes entered, admin actions)
+docker exec -it codelookup_app tail -f /data/app.log
 
-curl -k -X POST https://localhost/api/admin/codes \
-  -H "Content-Type: application/json" \
-  -H "x-admin-key: ВАШ_КЛЮЧ" \
-  -d '{"code": "NEW-CODE", "message": "Секретное сообщение"}'
+# nginx access log
+tail -f logs/nginx/access.log
 
-Список
-curl -k https://localhost/api/admin/codes -H "x-admin-key: ВАШ_КЛЮЧ"
+# Live docker logs
+docker compose logs -f
+```
 
-Удалить (по id)
-curl -k -X DELETE https://localhost/api/admin/codes/1 -H "x-admin-key: ВАШ_КЛЮЧ"
+## Move to another server
 
-Если были изменения: docker compose up -d --build
-
+Data is stored in Docker volume `app_data`.
+To migrate: `docker run --rm -v app_data:/data -v $(pwd):/backup alpine tar czf /backup/data.tar.gz /data`
+Then restore on new server.
