@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Code Lookup</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #fff;
+      color: #000;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 460px;
+      padding: 40px 24px;
+    }
+
+    /* Language switcher */
+    .lang-switch {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 36px;
+    }
+    .lang-btn {
+      padding: 4px 10px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      border: 1.5px solid #ccc;
+      border-radius: 4px;
+      background: #fff;
+      color: #999;
+      cursor: pointer;
+      letter-spacing: 0.03em;
+      transition: all 0.15s;
+    }
+    .lang-btn.active {
+      border-color: #000;
+      color: #000;
+      background: #000;
+      color: #fff;
+    }
+    .lang-btn:not(.active):hover {
+      border-color: #000;
+      color: #000;
+    }
+
+    h1 { font-size: 1.4rem; font-weight: 600; margin-bottom: 6px; }
+    p.sub { font-size: 0.88rem; color: #555; margin-bottom: 32px; }
+
+    label { display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 8px; }
+
+    input {
+      width: 100%;
+      border: 1.5px solid #000;
+      border-radius: 4px;
+      padding: 12px 14px;
+      font-size: 1rem;
+      outline: none;
+      background: #fff;
+      color: #000;
+      letter-spacing: 0.06em;
+    }
+    input:focus { border-color: #444; }
+
+    button#submitBtn {
+      margin-top: 14px;
+      width: 100%;
+      padding: 12px;
+      background: #000;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    button#submitBtn:hover { background: #222; }
+    button#submitBtn:disabled { background: #999; cursor: not-allowed; }
+
+    .result {
+      margin-top: 26px;
+      padding: 16px 18px;
+      border-radius: 4px;
+      font-size: 0.93rem;
+      line-height: 1.6;
+      display: none;
+    }
+    .result.success { border: 1.5px solid #000; background: #f9f9f9; display: block; }
+    .result.error   { border: 1.5px solid #ccc; color: #666; display: block; }
+    .result.warn    { border: 1.5px solid #e8a000; color: #7a5000; display: block; }
+
+    .result .lbl {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      margin-bottom: 7px;
+    }
+    .result.success .lbl { color: #000; }
+    .result.error .lbl   { color: #aaa; }
+    .result.warn .lbl    { color: #e8a000; }
+
+    .file-btn {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 8px 16px;
+      background: #000;
+      color: #fff;
+      border-radius: 4px;
+      text-decoration: none;
+      font-size: 0.84rem;
+      font-weight: 500;
+    }
+    .file-btn:hover { background: #333; }
+
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid #fff;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Language switcher -->
+  <div class="lang-switch">
+    <button class="lang-btn active" onclick="setLang('en')" id="btn-en">EN</button>
+    <button class="lang-btn" onclick="setLang('ru')" id="btn-ru">RU</button>
+  </div>
+
+  <h1 id="t-title">Enter your code</h1>
+  <p class="sub" id="t-sub">If the code is valid, you'll receive the associated information.</p>
+
+  <label for="codeInput" id="t-label">Code</label>
+  <input type="text" id="codeInput" placeholder="e.g. ALPHA-001" autocomplete="off" spellcheck="false"/>
+
+  <button id="submitBtn" onclick="check()"><span id="t-btn">Submit</span></button>
+
+  <div class="result" id="result">
+    <div class="lbl" id="resultLbl"></div>
+    <div id="resultMsg"></div>
+    <div id="resultFile"></div>
+  </div>
+
+</div>
+
+<script>
+  // ── i18n ────────────────────────────────────────────────────────────────────
+  const TRANSLATIONS = {
+    en: {
+      title:       'Enter your code',
+      sub:         "If the code is valid, you'll receive the associated information.",
+      label:       'Code',
+      btn:         'Submit',
+      placeholder: 'e.g. ALPHA-001',
+      lbl_info:    'Information',
+      lbl_notfound:'Not found',
+      lbl_limit:   'Too many attempts',
+      lbl_error:   'Error',
+      msg_notfound:'Sorry, no information is available for this code.',
+      msg_limit:   'Too many attempts. Please wait {n} seconds.',
+      msg_error:   'Could not connect to server. Please try again.',
+      download:    '⬇ Download',
+    },
+    ru: {
+      title:       'Введите ваш код',
+      sub:         'Если код действителен — вы получите связанную информацию.',
+      label:       'Код',
+      btn:         'Проверить',
+      placeholder: 'например, ALPHA-001',
+      lbl_info:    'Информация',
+      lbl_notfound:'Не найдено',
+      lbl_limit:   'Слишком много попыток',
+      lbl_error:   'Ошибка',
+      msg_notfound:'Извините, по этому коду информации нет.',
+      msg_limit:   'Слишком много попыток. Подождите {n} сек.',
+      msg_error:   'Не удалось подключиться к серверу.',
+      download:    '⬇ Скачать',
+    }
+  };
+
+  let lang = localStorage.getItem('lang') || 'en';
+
+  function setLang(l) {
+    lang = l;
+    localStorage.setItem('lang', l);
+    const t = TRANSLATIONS[l];
+    document.getElementById('t-title').textContent   = t.title;
+    document.getElementById('t-sub').textContent     = t.sub;
+    document.getElementById('t-label').textContent   = t.label;
+    document.getElementById('t-btn').textContent     = t.btn;
+    document.getElementById('codeInput').placeholder = t.placeholder;
+    document.getElementById('btn-en').classList.toggle('active', l === 'en');
+    document.getElementById('btn-ru').classList.toggle('active', l === 'ru');
+    // Reset result
+    document.getElementById('result').className = 'result';
+  }
+
+  function t(key, vars = {}) {
+    let s = TRANSLATIONS[lang][key] || key;
+    for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, v);
+    return s;
+  }
+
+  // Init language
+  setLang(lang);
+
+  // ── Check ───────────────────────────────────────────────────────────────────
+  document.getElementById('codeInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') check();
+  });
+
+  async function check() {
+    const code = document.getElementById('codeInput').value.trim();
+    if (!code) return;
+
+    const btn    = document.getElementById('submitBtn');
+    const result = document.getElementById('result');
+
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner"></div>';
+    result.className = 'result';
+
+    try {
+      const res  = await fetch('/api/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      });
+      const data = await res.json();
+
+      if (res.status === 429) {
+        show('warn', t('lbl_limit'), t('msg_limit', { n: data.retry_after }));
+      } else if (data.success) {
+        result.className = 'result success';
+        document.getElementById('resultLbl').textContent = t('lbl_info');
+        document.getElementById('resultMsg').textContent = data.message || '';
+        document.getElementById('resultFile').innerHTML  = data.has_file
+          ? `<a class="file-btn" href="${data.file_url}" download="${esc(data.file_name)}">${t('download')} ${esc(data.file_name)}</a>`
+          : '';
+      } else {
+        show('error', t('lbl_notfound'), t('msg_notfound'));
+      }
+    } catch {
+      show('error', t('lbl_error'), t('msg_error'));
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = `<span id="t-btn">${t('btn')}</span>`;
+  }
+
+  function show(type, lbl, msg) {
+    const result = document.getElementById('result');
+    result.className = `result ${type}`;
+    document.getElementById('resultLbl').textContent = lbl;
+    document.getElementById('resultMsg').textContent = msg;
+    document.getElementById('resultFile').innerHTML  = '';
+  }
+
+  function esc(s) {
+    return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+</script>
+</body>
+</html>
