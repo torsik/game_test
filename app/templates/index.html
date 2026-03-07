@@ -109,7 +109,7 @@
     .result.warn .lbl    { color: #e8a000; }
 
     .file-btn {
-      display: inline-block;
+      display: block;
       margin-top: 12px;
       padding: 8px 16px;
       background: #000;
@@ -118,8 +118,31 @@
       text-decoration: none;
       font-size: 0.84rem;
       font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .file-btn:hover { background: #333; }
+
+    .result-img {
+      margin-top: 14px;
+      width: 100%;
+      border-radius: 4px;
+      border: 1px solid #eee;
+      display: block;
+    }
+    .result-img-dl {
+      display: block;
+      margin-top: 8px;
+      font-size: 0.78rem;
+      color: #888;
+      text-decoration: underline;
+      cursor: pointer;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .result-img-dl:hover { color: #000; }
 
     .spinner {
       width: 16px; height: 16px;
@@ -248,9 +271,21 @@
         result.className = 'result success';
         document.getElementById('resultLbl').textContent = t('lbl_info');
         document.getElementById('resultMsg').textContent = data.message || '';
-        document.getElementById('resultFile').innerHTML  = data.has_file
-          ? `<a class="file-btn" href="${data.file_url}" download="${esc(data.file_name)}">${t('download')} ${esc(data.file_name)}</a>`
-          : '';
+
+        if (data.has_file) {
+          const imgExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+          const ext = (data.file_name || '').toLowerCase().match(/\.[^.]+$/)?.[0] || '';
+          if (imgExts.includes(ext)) {
+            document.getElementById('resultFile').innerHTML =
+              `<img class="result-img" src="${data.file_url}" alt="${esc(data.file_name)}"/>` +
+              `<a class="result-img-dl" href="${data.file_url}" download="${esc(data.file_name)}">⬇ ${t('download')} ${esc(data.file_name)}</a>`;
+          } else {
+            document.getElementById('resultFile').innerHTML =
+              `<a class="file-btn" href="${data.file_url}" download="${esc(data.file_name)}">${t('download')} ${esc(data.file_name)}</a>`;
+          }
+        } else {
+          document.getElementById('resultFile').innerHTML = '';
+        }
       } else {
         show('error', t('lbl_notfound'), t('msg_notfound'));
       }
