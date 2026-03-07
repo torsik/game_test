@@ -27,7 +27,7 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 # Rate limits
 RATE_LIMIT_ATTEMPTS       = int(os.getenv("RATE_LIMIT_ATTEMPTS", "10"))
 RATE_LIMIT_WINDOW         = int(os.getenv("RATE_LIMIT_WINDOW",   "60"))
-ADMIN_RATE_LIMIT_ATTEMPTS = 5    # stricter for admin login
+ADMIN_RATE_LIMIT_ATTEMPTS = 5
 ADMIN_RATE_LIMIT_WINDOW   = 300  # 5 minutes
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -68,20 +68,23 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS codes (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            code       TEXT UNIQUE NOT NULL,
-            message    TEXT,
-            file_path  TEXT,
-            file_name  TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            code        TEXT UNIQUE NOT NULL,
+            message     TEXT,
+            file_path   TEXT,
+            file_name   TEXT,
+            file_token  TEXT UNIQUE,  -- opaque token for file access, NOT guessable
+            created_at  TEXT DEFAULT (datetime('now'))
         )
     """)
-    for col in ["file_path TEXT", "file_name TEXT"]:
+    # Migrate existing DB
+    for col in ["file_path TEXT", "file_name TEXT", "file_token TEXT UNIQUE"]:
         try:
             conn.execute(f"ALTER TABLE codes ADD COLUMN {col}")
         except Exception:
             pass
     conn.commit()
+    # Seed example data
     if conn.execute("SELECT COUNT(*) FROM codes").fetchone()[0] == 0:
         conn.executemany("INSERT INTO codes (code, message) VALUES (?, ?)", [
             ("ALPHA-001", "Congratulations! Your promo code: SAVE50"),
@@ -99,7 +102,7 @@ async def lifespan(app: FastAPI):
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(title="Code Lookup", lifespan=lifespan, docs_url=None, redoc_url=None)
 templates = Jinja2Templates(directory="/app/templates")
-# NOTE: /uploads is NOT mounted as static — files served only via /api/file/{code}
+# /uploads is NOT mounted as static — files only via /api/file/{token}
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def get_ip(request: Request) -> str:
@@ -113,7 +116,6 @@ def require_admin(request: Request, x_admin_key: str = Header(...)):
     logger.info(f"ADMIN_OK     ip={ip}  path={request.url.path}")
 
 def safe_file_path(file_path: str) -> Path:
-    """Ensure file path is inside UPLOAD_DIR (prevent path traversal)."""
     resolved = Path(file_path).resolve()
     if not str(resolved).startswith(str(UPLOAD_DIR)):
         raise HTTPException(status_code=403, detail="Forbidden")
@@ -150,7 +152,7 @@ async def check_code(body: CheckRequest, request: Request):
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     row = conn.execute(
-        "SELECT message, file_path, file_name FROM codes WHERE code = ?", (code,)
+        "SELECT message, file_path, file_name, file_token FROM codes WHERE code = ?", (code,)
     ).fetchone()
     conn.close()
 
@@ -161,44 +163,50 @@ async def check_code(body: CheckRequest, request: Request):
             "message":   row["message"],
             "has_file":  bool(row["file_path"]),
             "file_name": row["file_name"],
-            "file_url":  f"/api/file/{code}" if row["file_path"] else None,
+            # Return opaque token — NOT the user code
+            "file_url":  f"/api/file/{row['file_token']}" if row["file_path"] else None,
         }
 
     logger.info(f"CODE_MISS    ip={ip}  code={code}")
     return {"success": False}
 
-@app.get("/api/file/{code}")
-async def get_file(code: str, request: Request):
+
+@app.get("/api/file/{token}")
+async def get_file(token: str, request: Request):
+    """
+    File access by opaque token (uuid4, 32 hex chars).
+    Token is unguessable — brute force is infeasible (10^38 combinations).
+    """
     ip = get_ip(request)
 
-    # Rate limit file downloads too
+    # Rate limit file downloads
     allowed, retry_after = code_limiter.is_allowed(f"file:{ip}")
     if not allowed:
         raise HTTPException(status_code=429, detail="Too many requests")
 
+    # Lookup by token — NOT by user code
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     row = conn.execute(
-        "SELECT file_path, file_name FROM codes WHERE code = ?", (code.upper(),)
+        "SELECT file_path, file_name FROM codes WHERE file_token = ?", (token,)
     ).fetchone()
     conn.close()
 
     if not row or not row["file_path"]:
         raise HTTPException(status_code=404, detail="File not found")
 
-    path = safe_file_path(row["file_path"])  # path traversal check
+    path = safe_file_path(row["file_path"])
     if not path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
-    logger.info(f"FILE_DL      ip={ip}  code={code}  file={row['file_name']}")
+    logger.info(f"FILE_DL      ip={ip}  token={token[:8]}...  file={row['file_name']}")
     return FileResponse(path, filename=row["file_name"])
 
-# ── Admin UI auth — rate limited ──────────────────────────────────────────────
+
+# ── Admin UI auth ─────────────────────────────────────────────────────────────
 @app.post("/api/admin/verify-ui")
 async def verify_admin_ui(body: VerifyAdminUI, request: Request):
     ip = get_ip(request)
-
-    # Strict rate limit on login attempts
     allowed, retry_after = admin_limiter.is_allowed(ip)
     if not allowed:
         logger.warning(f"ADMIN_BRUTE  ip={ip}  blocked for {retry_after}s")
@@ -206,11 +214,8 @@ async def verify_admin_ui(body: VerifyAdminUI, request: Request):
             status_code=429,
             content={"success": False, "error": "rate_limit", "retry_after": retry_after},
         )
-
-    # Constant-time comparison to prevent timing attacks
     if secrets.compare_digest(body.password, ADMIN_UI_PASS):
         logger.info(f"ADMIN_LOGIN  ip={ip}")
-        # Return only a session token — NOT the actual ADMIN_KEY
         return {"success": True}
 
     logger.warning(f"ADMIN_UI_FAIL ip={ip}")
@@ -245,8 +250,10 @@ async def add_code(
     if not message.strip() and (not file or not file.filename):
         raise HTTPException(status_code=400, detail="message or file is required")
 
-    file_path = None
-    file_name = None
+    file_path  = None
+    file_name  = None
+    file_token = None
+
     if file and file.filename:
         ext = Path(file.filename).suffix.lower()
         if ext not in ALLOWED_EXTENSIONS:
@@ -254,17 +261,20 @@ async def add_code(
         content = await file.read()
         if len(content) > MAX_FILE_SIZE:
             raise HTTPException(status_code=400, detail="File too large (max 10MB)")
-        safe_name = f"{uuid.uuid4().hex}{ext}"
-        file_path = str(UPLOAD_DIR / safe_name)
-        file_name = file.filename
+
+        safe_name  = f"{uuid.uuid4().hex}{ext}"   # random name on disk
+        file_token = uuid.uuid4().hex              # separate opaque access token
+        file_path  = str(UPLOAD_DIR / safe_name)
+        file_name  = file.filename
+
         with open(file_path, "wb") as f:
             f.write(content)
 
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.execute(
-            "INSERT INTO codes (code, message, file_path, file_name) VALUES (?, ?, ?, ?)",
-            (code, message.strip() or None, file_path, file_name),
+            "INSERT INTO codes (code, message, file_path, file_name, file_token) VALUES (?, ?, ?, ?, ?)",
+            (code, message.strip() or None, file_path, file_name, file_token),
         )
         conn.commit()
         conn.close()
@@ -285,7 +295,7 @@ async def delete_code(code_id: int, request: Request):
         try:
             safe_file_path(row["file_path"]).unlink(missing_ok=True)
         except HTTPException:
-            pass  # skip if path is somehow invalid
+            pass
     conn.execute("DELETE FROM codes WHERE id = ?", (code_id,))
     conn.commit()
     conn.close()
